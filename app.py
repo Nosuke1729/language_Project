@@ -16,6 +16,20 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Streamlit UI 設定
 # =========================
 st.set_page_config(page_title="Language Learning Chat", layout="wide")
+
+st.markdown("""
+<style>
+body { background-color: #f5f5f5; }
+.chat-container { max-width: 700px; margin: auto; height: 60vh; overflow-y: auto; padding: 10px; background-color: #fff; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+.user-bubble { background-color:#007bff; color:white; padding:10px 15px; border-radius:15px; margin:5px 0; max-width:70%; text-align:right; float:right; clear:both; }
+.bot-bubble { background-color:#e5e5ea; color:black; padding:10px 15px; border-radius:15px; margin:5px 0; max-width:70%; text-align:left; float:left; clear:both; }
+.clear-both { clear:both; }
+.input-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); max-width: 700px; width: 100%; display: flex; gap: 5px; }
+input[type=text] { flex: 1; padding: 10px; border-radius: 20px; border: 1px solid #ccc; }
+button { padding: 10px 20px; border-radius: 20px; background-color: #007bff; color: white; border: none; }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🌐 Language Learning Chat")
 
 # =========================
@@ -24,6 +38,7 @@ st.title("🌐 Language Learning Chat")
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
     st.session_state.display_name = None
+    st.session_state.messages = []
 
 with st.sidebar:
     st.header("ユーザー情報")
@@ -51,7 +66,6 @@ with st.sidebar:
 if st.session_state.user_id:
     st.header("学習ルーム")
     
-    # ルーム一覧を取得
     rooms_resp = supabase.table("rooms").select("*").execute()
     rooms = rooms_resp.data
     room_names = [r["name"] for r in rooms] if rooms else []
@@ -67,40 +81,39 @@ if st.session_state.user_id:
                 "language": "English"
             }).execute().data[0]
             st.success(f"ルーム作成: {room['name']}")
-            # 作成したルームを選択状態にする
             selected_room_name = room["name"]
             rooms.append(room)
         else:
             st.warning("ルーム名を入力してください。")
 
-    # 選択されたルーム情報
     selected_room = next((r for r in rooms if r["name"] == selected_room_name), None)
 
     if selected_room is None:
         st.warning("選択されたルームが見つかりません。新しく作成してください。")
     else:
         st.subheader(f"Room: {selected_room_name} ({selected_room['language']})")
-
-        # =========================
-        # チャット機能
-        # =========================
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
-
         show_translation = st.checkbox("母語翻訳を表示", value=True)
 
-        # モデルロード（軽量モデル）
-        @st.cache_resource
-        def load_model():
-            tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
-            model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
-            return tokenizer, model
+        # =========================
+        # モデルロード（軽量化）
+        # =========================
+        if "model_loaded" not in st.session_state:
+            with st.spinner("モデルをロード中..."):
+                tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
+                model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
+                st.session_state.tokenizer = tokenizer
+                st.session_state.model = model
+                st.session_state.model_loaded = True
 
-        tokenizer, model = load_model()
+        tokenizer = st.session_state.tokenizer
+        model = st.session_state.model
 
-        user_input = st.text_input("あなたのメッセージ:")
+        # =========================
+        # メッセージ送信
+        # =========================
+        user_input = st.text_input("あなたのメッセージ:", key="chat_input")
         if st.button("送信") and user_input:
-            # メッセージをDBに保存
+            # DB保存
             supabase.table("messages").insert({
                 "room_id": selected_room["id"],
                 "user_id": st.session_state.user_id,
@@ -109,12 +122,11 @@ if st.session_state.user_id:
                 "created_at": datetime.utcnow().isoformat()
             }).execute()
 
-            # AI応答生成
+            # AI応答
             inputs = tokenizer.encode(user_input + tokenizer.eos_token, return_tensors="pt")
             outputs = model.generate(inputs, max_length=100, pad_token_id=tokenizer.eos_token_id)
             bot_response = tokenizer.decode(outputs[:, inputs.shape[-1]:][0], skip_special_tokens=True)
 
-            # AI応答をDBに保存
             supabase.table("messages").insert({
                 "room_id": selected_room["id"],
                 "role": "bot",
@@ -125,31 +137,38 @@ if st.session_state.user_id:
             st.session_state.messages.append({"role": "user", "content": user_input})
             st.session_state.messages.append({"role": "bot", "content": bot_response})
 
-        # 過去メッセージ表示
+        # =========================
+        # チャット表示
+        # =========================
+        chat_html = "<div class='chat-container'>"
         for msg in st.session_state.messages:
-            if msg["role"] == "user":
-                st.markdown(f"**あなた:** {msg['content']}")
-            else:
-                text = msg['content']
-                if show_translation:
-                    words = text.split()
-                    translated_words = []
-                    for w in words:
-                        resp = supabase.table("vocab")\
-                            .select("target_word")\
-                            .eq("source_word", w)\
-                            .eq("language", selected_room["language"])\
-                            .execute()
-                        if resp.data:
-                            translated_words.append(resp.data[0]["target_word"])
-                        else:
-                            translated_words.append(w)
-                    text += " _(母語訳: " + " ".join(translated_words) + ")_"
+            role = msg["role"]
+            text = msg["content"]
+            if show_translation and role == "bot":
+                words = text.split()
+                translated_words = []
+                for w in words:
+                    resp = supabase.table("vocab")\
+                        .select("target_word")\
+                        .eq("source_word", w)\
+                        .eq("language", selected_room["language"])\
+                        .execute()
+                    if resp.data:
+                        translated_words.append(resp.data[0]["target_word"])
+                    else:
+                        translated_words.append(w)
+                text += "<br><small style='color: gray;'>母語訳: " + " ".join(translated_words) + "</small>"
 
-                st.markdown(f"**AI:** {text}")
+            if role == "user":
+                chat_html += f"<div class='user-bubble'>{text}</div>"
+            else:
+                chat_html += f"<div class='bot-bubble'>{text}</div>"
+        chat_html += "<div class='clear-both'></div></div>"
+
+        st.markdown(chat_html, unsafe_allow_html=True)
 
         # =========================
-        # 単語帳に追加
+        # 単語帳
         # =========================
         st.subheader("単語帳に追加")
         new_word = st.text_input("追加したい単語を入力", key="vocab_input")
@@ -169,9 +188,6 @@ if st.session_state.user_id:
                 }).execute()
                 st.success(f"{new_word} を単語帳に追加しました")
 
-        # =========================
-        # 単語帳（復習用）
-        # =========================
         st.subheader("単語帳（復習用）")
         vocab_list = supabase.table("vocab")\
             .select("*")\
