@@ -67,10 +67,9 @@ if st.session_state.user_id:
                 "language": "English"
             }).execute().data[0]
             st.success(f"ルーム作成: {room['name']}")
-            # ルーム一覧を再取得
-            rooms_resp = supabase.table("rooms").select("*").execute()
-            rooms = rooms_resp.data
+            # 作成したルームを選択状態にする
             selected_room_name = room["name"]
+            rooms.append(room)
         else:
             st.warning("ルーム名を入力してください。")
 
