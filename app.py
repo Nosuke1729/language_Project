@@ -9,8 +9,8 @@ import torch
 # =========================
 # Supabase 接続
 # =========================
-SUPABASE_URL = os.getenv("https://cpgzjxjwgmklmmmjqmly.supabase.co")
-SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwZ3pqeGp3Z21rbG1tbWpxbWx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyMDcwODAsImV4cCI6MjA3Mjc4MzA4MH0.vhAM2caYaM24mNij_HB_cBD7eRngn_PDkgEfmrpy2h8")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # =========================
@@ -22,18 +22,16 @@ st.title("🌐 Language Learning Chat")
 # =========================
 # st.session_state 初期化
 # =========================
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
-if "display_name" not in st.session_state:
-    st.session_state.display_name = None
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "model_loaded" not in st.session_state:
-    st.session_state.model_loaded = False
-if "selected_room" not in st.session_state:
-    st.session_state.selected_room = None
-if "show_translation" not in st.session_state:
-    st.session_state.show_translation = True
+for key, default in [
+    ("user_id", None), 
+    ("display_name", None), 
+    ("messages", []), 
+    ("model_loaded", False),
+    ("selected_room", None),
+    ("show_translation", True)
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # =========================
 # ユーザー登録 / ログイン
@@ -80,14 +78,13 @@ if st.session_state.user_id:
                 "language": "English"
             }).execute().data[0]
             st.success(f"ルーム作成: {room['name']}")
-            rooms_resp = supabase.table("rooms").select("*").execute()
-            rooms = rooms_resp.data
-            selected_room_name = room["name"]
+            st.session_state.selected_room = room
         else:
             st.warning("ルーム名を入力してください。")
 
     # 選択されたルーム情報
-    st.session_state.selected_room = next((r for r in rooms if r["name"] == selected_room_name), None)
+    if not st.session_state.selected_room and selected_room_name:
+        st.session_state.selected_room = next((r for r in rooms if r["name"] == selected_room_name), None)
 
 # =========================
 # チャット機能
@@ -99,11 +96,12 @@ if st.session_state.selected_room:
     # 母語翻訳表示
     st.session_state.show_translation = st.checkbox("母語翻訳を表示", value=st.session_state.show_translation)
 
-    # モデルロード（軽量モデル）
+    # モデルロード（軽量版）
     @st.cache_resource
     def load_model():
         tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
         model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
+        model.eval()
         return tokenizer, model
 
     if not st.session_state.model_loaded:
@@ -114,7 +112,7 @@ if st.session_state.selected_room:
     model = st.session_state.model
 
     # 入力
-    user_input = st.text_input("あなたのメッセージ:")
+    user_input = st.text_input("あなたのメッセージ:", key="input_msg")
     if st.button("送信") and user_input:
         # DB保存
         supabase.table("messages").insert({
@@ -125,7 +123,7 @@ if st.session_state.selected_room:
             "created_at": datetime.utcnow().isoformat()
         }).execute()
 
-        # AI応答
+        # AI応答生成
         inputs = tokenizer.encode(user_input + tokenizer.eos_token, return_tensors="pt")
         outputs = model.generate(inputs, max_length=100, pad_token_id=tokenizer.eos_token_id)
         bot_response = tokenizer.decode(outputs[:, inputs.shape[-1]:][0], skip_special_tokens=True)
@@ -138,6 +136,7 @@ if st.session_state.selected_room:
             "created_at": datetime.utcnow().isoformat()
         }).execute()
 
+        # セッションに保存
         st.session_state.messages.append({"role": "user", "content": user_input})
         st.session_state.messages.append({"role": "bot", "content": bot_response})
 
@@ -166,7 +165,7 @@ if st.session_state.selected_room:
     # 単語帳追加
     st.subheader("単語帳に追加")
     new_word = st.text_input("追加したい単語を入力", key="vocab_input")
-    if st.button("単語を保存"):
+    if st.button("単語を保存", key="save_vocab"):
         exists = supabase.table("vocab")\
             .select("*")\
             .eq("user_id", st.session_state.user_id)\
