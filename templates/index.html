@@ -1,16 +1,277 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="mi">
 <head>
-    <meta charset="UTF-8">
-    <title>Language Learning Chat</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Māori Chatbot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f6fbfa;
+      --card: #ffffff;
+      --accent: #1f8a70;
+      --accent-dark: #166b57;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #dbe5e1;
+      --user: #e8f7f2;
+      --bot: #fff3ed;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, sans-serif;
+      background: linear-gradient(180deg, #edf8f5 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+      gap: 24px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(20, 46, 39, 0.06);
+    }
+    .main { padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 2rem; }
+    .subtitle { color: var(--muted); margin-bottom: 18px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    button, input[type="submit"] {
+      border: none;
+      background: var(--accent);
+      color: white;
+      padding: 11px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.secondary {
+      background: white;
+      color: var(--accent);
+      border: 1px solid var(--border);
+    }
+    button:hover, input[type="submit"]:hover { background: var(--accent-dark); }
+    button.secondary:hover { background: #f0fbf7; }
+    form { margin: 0; }
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      padding: 14px;
+      font: inherit;
+      resize: vertical;
+      margin-bottom: 10px;
+    }
+    .error {
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+      border-radius: 12px;
+      color: #9f1239;
+    }
+    .chat-list { margin-top: 18px; display: grid; gap: 12px; }
+    .chat {
+      border-radius: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+    }
+    .chat.user-bot .user-line { background: var(--user); }
+    .chat.user-bot .bot-line { background: var(--bot); }
+    .line {
+      padding: 10px 12px;
+      border-radius: 12px;
+      margin: 8px 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .label { font-weight: 700; }
+    .side { padding: 20px; align-self: start; }
+    .side h2 { margin-top: 0; margin-bottom: 12px; font-size: 1.2rem; }
+    .phrase, .auto-phrase {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 0;
+      border-bottom: 1px solid #eef4f2;
+    }
+    .phrase small { display: block; color: var(--muted); margin-top: 3px; }
+    .section-title { margin-top: 18px; margin-bottom: 10px; font-weight: 700; }
+    .empty {
+      padding: 18px;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      color: var(--muted);
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      .page { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
-    <div id="chat-container">
-        <div id="messages"></div>
-        <input type="text" id="user-input" placeholder="メッセージを入力...">
-        <button id="send-btn">送信</button>
-    </div>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <div class="page">
+    <section class="card main">
+      <h1>Māori Chatbot</h1>
+      <div class="subtitle" id="subtitle">Tuhia tō pātai ki te reo Māori, ka whakahoki te pūnaha ki te reo Māori.</div>
+
+      <div class="toolbar">
+        <button type="button" class="secondary" onclick="setLang('mi')">Māori</button>
+        <button type="button" class="secondary" onclick="setLang('ja')">日本語</button>
+        <button type="button" class="secondary" onclick="setLang('en')">English</button>
+      </div>
+
+      {% if error %}
+      <div class="error">{{ error }}</div>
+      {% endif %}
+
+      <form method="POST" action="/">
+        <textarea name="user_input" id="chatInput" placeholder="Tuhia tō pātai ki te reo Māori..." required></textarea>
+        <input type="submit" value="Tukua / Send" />
+      </form>
+
+      <form method="POST" action="/reset" style="margin-top: 10px;">
+        <button type="submit" class="secondary">Reset Chat</button>
+      </form>
+
+      <div class="chat-list">
+        {% if session_history %}
+          {% for pair in session_history %}
+          <div class="chat user-bot">
+            <div class="line user-line"><span class="label">🙋 You:</span> {{ pair.user }}</div>
+            <div class="line bot-line"><span class="label">🤖 Bot:</span> {{ pair.bot }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty">Kāore anō kia tīmata te kōrero.</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <aside class="card side">
+      <h2 id="panel-title">Kīanga Māori</h2>
+      <div id="phrase-list"></div>
+
+      <div class="section-title" id="recent-title">Kupu i whakamahia</div>
+      <div id="auto-phrases"></div>
+    </aside>
+  </div>
+
+  <script>
+    const phrases = [
+      { mi: 'Kia ora', ja: 'こんにちは / ありがとう', en: 'Hello / Thank you' },
+      { mi: 'Kei te pēhea koe?', ja: '元気ですか？', en: 'How are you?' },
+      { mi: 'He aha tēnei?', ja: 'これは何ですか？', en: 'What is this?' },
+      { mi: 'Āe', ja: 'はい', en: 'Yes' },
+      { mi: 'Kāo', ja: 'いいえ', en: 'No' },
+      { mi: 'Aroha mai', ja: 'ごめんなさい', en: 'Sorry' },
+      { mi: 'Ka pai', ja: 'いいね / よくできた', en: 'Good / Well done' },
+      { mi: 'Ngā mihi', ja: 'ありがとう', en: 'Thanks' }
+    ];
+
+    let currentLang = 'mi';
+
+    const uiText = {
+      mi: {
+        panelTitle: 'Kīanga Māori',
+        recentTitle: 'Kupu i whakamahia',
+        subtitle: 'Tuhia tō pātai ki te reo Māori, ka whakahoki te pūnaha ki te reo Māori.',
+        placeholder: 'Tuhia tō pātai ki te reo Māori...'
+      },
+      ja: {
+        panelTitle: 'マオリ語の表現',
+        recentTitle: '最近使われた表現',
+        subtitle: 'マオリ語で入力すると、マオリ語で返答します。',
+        placeholder: 'マオリ語で入力してください...'
+      },
+      en: {
+        panelTitle: 'Māori Phrases',
+        recentTitle: 'Recently Used Phrases',
+        subtitle: 'Type in Māori and the chatbot replies in Māori.',
+        placeholder: 'Type your question in Māori...'
+      }
+    };
+
+    function insertPhrase(text) {
+      const textarea = document.getElementById('chatInput');
+      textarea.value += (textarea.value ? ' ' : '') + text;
+      textarea.focus();
+    }
+
+    function renderPhrases() {
+      const list = document.getElementById('phrase-list');
+      list.innerHTML = '';
+      phrases.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'phrase';
+        row.innerHTML = `
+          <div>
+            <div><strong>${p.mi}</strong></div>
+            <small>${p[currentLang]}</small>
+          </div>
+          <button type="button" class="secondary" onclick="insertPhrase(${JSON.stringify(p.mi)})">➕</button>
+        `;
+        list.appendChild(row);
+      });
+    }
+
+    function setLang(lang) {
+      currentLang = lang;
+      document.getElementById('panel-title').textContent = uiText[lang].panelTitle;
+      document.getElementById('recent-title').textContent = uiText[lang].recentTitle;
+      document.getElementById('subtitle').textContent = uiText[lang].subtitle;
+      document.getElementById('chatInput').placeholder = uiText[lang].placeholder;
+      renderPhrases();
+    }
+
+    function extractBotPhrases() {
+      const phrasesSet = new Set();
+      {% for pair in session_history %}
+      (() => {
+        const botText = {{ pair.bot|tojson }};
+        botText
+          .split(/[.!?。！？\n]/)
+          .map(s => s.trim())
+          .filter(s => s && s.split(/\s+/).length <= 6)
+          .forEach(s => phrasesSet.add(s));
+      })();
+      {% endfor %}
+
+      const container = document.getElementById('auto-phrases');
+      container.innerHTML = '';
+      if (phrasesSet.size === 0) {
+        container.innerHTML = '<div class="empty">No phrases yet.</div>';
+        return;
+      }
+      [...phrasesSet].slice(0, 12).forEach(text => {
+        const row = document.createElement('div');
+        row.className = 'auto-phrase';
+        row.innerHTML = `<span>${text}</span><button type="button" class="secondary" onclick="insertPhrase(${JSON.stringify('PLACEHOLDER')}.replace('PLACEHOLDER', text))">➕</button>`;
+        const btn = row.querySelector('button');
+        btn.onclick = () => insertPhrase(text);
+        container.appendChild(row);
+      });
+    }
+
+    document.getElementById('chatInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        e.target.form.submit();
+      }
+    });
+
+    setLang('mi');
+    extractBotPhrases();
+  </script>
 </body>
 </html>

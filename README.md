@@ -1,35 +1,39 @@
----
-title: Language Project
-emoji: 🚀
-colorFrom: red
-colorTo: red
-sdk: streamlit
-app_file: "app.py"
-pinned: false
-short_description: Streamlit template space
----
+# Māori Chatbot Web App
 
-# Welcome to Language Learning Chat!
+Flask + Hugging Face Transformers を使った Māori chatbot の Web アプリです。
 
-この Space は言語学習チャットアプリのテンプレートです。  
-ユーザー登録・ルーム作成・チャット・単語帳・辞書翻訳機能を備えています。
+## 重要
+このアプリは **Python バックエンドが必要** です。したがって、**GitHub Pages だけでは動きません**。
 
-## 使い方
+公開方法は次の形が現実的です。
+- ソースコード: GitHub
+- Web公開: Render / Railway / Hugging Face Spaces など
 
-1. サイドバーでユーザー情報を入力し、ログインまたは登録
-2. 学習したい言語のルームを作成または選択
-3. チャット画面で AI と会話
-4. チャット中の単語を選択して単語帳に追加
-5. 単語帳で復習・テスト
+## ローカル実行
+```bash
+python3 -m pip install -r requirements.txt
+python3 app.py
+```
 
-## 開発者向け情報
+## Render で公開する場合
+1. GitHub にこのフォルダを push
+2. Render で **New Web Service** を選択
+3. GitHub リポジトリを接続
+4. 以下を設定
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `python app.py`
+5. Environment Variables を追加
+   - `SECRET_KEY`: 長いランダム文字列
+   - 必要なら `MODEL_NAME`: 例 `bigscience/bloomz-560m`
 
-- アプリ本体は `app.py` にあります
-- 依存ライブラリは `requirements.txt` に記載
-- Supabase でユーザー情報・チャット履歴・単語帳を管理
-- 母語翻訳は簡易辞書ベースで行われます
+## 注意
+- `bigscience/bloomz-1b1` は重く、無料枠では厳しいことがあります。
+- まずは `bigscience/bloomz-560m` を推奨します。
+- もっと軽くしたい場合は別モデルに差し替えてください。
 
-## ドキュメント
-
-- [Streamlit ドキュメント](https://docs.streamlit.io)
-- [Streamlit コミュニティ](https://discuss.streamlit.io)
+## 主な修正点
+- `.DS_Store` など不要ファイルを除外
+- セッション履歴の保存まわりを整理
+- テンプレート中の JS 文字列埋め込みを安全化
+- `health` エンドポイント追加
+- Render 用の `Procfile` と `runtime.txt` を追加
